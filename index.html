@@ -208,29 +208,84 @@
     #mobileControls {
         display: none;
         position: fixed;
-        bottom: 22px;
-        left: 50%;
-        transform: translateX(-50%);
+        left: 22px;
+        bottom: max(28px, env(safe-area-inset-bottom));
+        width: 136px;
+        height: 136px;
         z-index: 7;
-        gap: 14px;
         pointer-events: auto;
+        touch-action: none;
+        -webkit-user-select: none;
+        user-select: none;
+        -webkit-touch-callout: none;
     }
 
-    .mobileBtn {
-        width: 62px;
-        height: 62px;
-        padding: 0;
+    #joystickBase {
+        position: absolute;
+        left: 8px;
+        top: 8px;
+        width: 120px;
+        height: 120px;
         border-radius: 50%;
-        color: white;
-        background: rgba(0, 255, 255, .1);
-        border: 1px solid rgba(0, 255, 255, .4);
-        box-shadow: 0 0 20px rgba(0,255,255,.12);
-        font-size: 24px;
+        background:
+            radial-gradient(circle at 35% 30%,
+                rgba(0,255,255,.18),
+                rgba(0,255,255,.06) 48%,
+                rgba(0,0,0,.18) 100%);
+        border: 1px solid rgba(0,255,255,.45);
+        box-shadow:
+            0 0 22px rgba(0,255,255,.15),
+            inset 0 0 25px rgba(0,255,255,.08);
+        touch-action: none;
+    }
+
+    #joystickBase::before {
+        content: "";
+        position: absolute;
+        inset: 16px;
+        border-radius: 50%;
+        border: 1px solid rgba(255,255,255,.08);
+        pointer-events: none;
+    }
+
+    #joystickKnob {
+        position: absolute;
+        left: 33px;
+        top: 33px;
+        width: 54px;
+        height: 54px;
+        border-radius: 50%;
+        background:
+            radial-gradient(circle at 35% 30%,
+                #ffffff 0%,
+                #7dffff 22%,
+                #00ffff 55%,
+                rgba(0,255,255,.65) 100%);
+        border: 1px solid rgba(255,255,255,.7);
+        box-shadow:
+            0 0 14px rgba(0,255,255,.7),
+            0 0 30px rgba(0,255,255,.3);
+        transform: translate(0, 0);
+        transition: transform .08s ease-out;
+        touch-action: none;
+        pointer-events: none;
+    }
+
+    #joystickLabel {
+        position: absolute;
+        left: 50%;
+        top: 50%;
+        transform: translate(-50%, -50%);
+        color: rgba(255,255,255,.45);
+        font-size: 9px;
+        letter-spacing: 2px;
+        pointer-events: none;
+        text-transform: uppercase;
     }
 
     @media (pointer: coarse) {
         #mobileControls {
-            display: flex;
+            display: block;
         }
     }
 </style>
@@ -275,7 +330,7 @@
 
         <div class="controls">
             <strong>PC:</strong> WASD / Arrow Keys to move<br>
-            <strong>Mobile:</strong> Use the controls below<br>
+            <strong>Mobile:</strong> Move using the joystick<br>
             Collect <strong>cyan orbs</strong> for points<br>
             Collect <strong>gold orbs</strong> for power-ups
         </div>
@@ -300,11 +355,11 @@
     </div>
 </div>
 
-<div id="mobileControls">
-    <button class="mobileBtn" data-key="left">◀</button>
-    <button class="mobileBtn" data-key="up">▲</button>
-    <button class="mobileBtn" data-key="down">▼</button>
-    <button class="mobileBtn" data-key="right">▶</button>
+<div id="mobileControls" aria-label="Virtual joystick">
+    <div id="joystickBase">
+        <div id="joystickKnob"></div>
+        <div id="joystickLabel">MOVE</div>
+    </div>
 </div>
 
 <script>
@@ -450,25 +505,88 @@ addEventListener("keyup", e => {
     }
 });
 
-/* Mobile */
+/* Mobile Virtual Joystick */
 
-document.querySelectorAll(".mobileBtn").forEach(btn => {
-    const key = btn.dataset.key;
+const joystickBase = document.getElementById("joystickBase");
+const joystickKnob = document.getElementById("joystickKnob");
 
-    const down = e => {
-        e.preventDefault();
-        keys[key] = true;
-    };
+const joystick = {
+    active: false,
+    pointerId: null,
+    x: 0,
+    y: 0,
+    maxDistance: 34
+};
 
-    const up = e => {
-        e.preventDefault();
-        keys[key] = false;
-    };
+function resetJoystick() {
+    joystick.active = false;
+    joystick.pointerId = null;
+    joystick.x = 0;
+    joystick.y = 0;
 
-    btn.addEventListener("pointerdown", down);
-    btn.addEventListener("pointerup", up);
-    btn.addEventListener("pointercancel", up);
-    btn.addEventListener("pointerleave", up);
+    joystickKnob.style.transform = "translate(0, 0)";
+
+    keys.up = false;
+    keys.down = false;
+    keys.left = false;
+    keys.right = false;
+}
+
+function updateJoystick(e) {
+    const rect = joystickBase.getBoundingClientRect();
+
+    const centerX = rect.left + rect.width / 2;
+    const centerY = rect.top + rect.height / 2;
+
+    let dx = e.clientX - centerX;
+    let dy = e.clientY - centerY;
+
+    const distance = Math.hypot(dx, dy);
+
+    if (distance > joystick.maxDistance) {
+        dx = dx / distance * joystick.maxDistance;
+        dy = dy / distance * joystick.maxDistance;
+    }
+
+    joystick.x = dx / joystick.maxDistance;
+    joystick.y = dy / joystick.maxDistance;
+
+    joystickKnob.style.transform =
+        `translate(${dx}px, ${dy}px)`;
+}
+
+joystickBase.addEventListener("pointerdown", e => {
+    e.preventDefault();
+
+    joystick.active = true;
+    joystick.pointerId = e.pointerId;
+
+    try {
+        joystickBase.setPointerCapture(e.pointerId);
+    } catch (_) {}
+
+    updateJoystick(e);
+});
+
+joystickBase.addEventListener("pointermove", e => {
+    if (!joystick.active || e.pointerId !== joystick.pointerId) return;
+
+    e.preventDefault();
+    updateJoystick(e);
+});
+
+joystickBase.addEventListener("pointerup", e => {
+    if (e.pointerId !== joystick.pointerId) return;
+
+    e.preventDefault();
+    resetJoystick();
+});
+
+joystickBase.addEventListener("pointercancel", e => {
+    if (e.pointerId !== joystick.pointerId) return;
+
+    e.preventDefault();
+    resetJoystick();
 });
 
 /* ---------- Game State ---------- */
@@ -566,20 +684,46 @@ function resetPlayer() {
 function updatePlayer(dt) {
     let dx = 0;
     let dy = 0;
+    let inputStrength = 0;
 
-    if (keys.left) dx--;
-    if (keys.right) dx++;
-    if (keys.up) dy--;
-    if (keys.down) dy++;
+    if (joystick.active) {
+        dx = joystick.x;
+        dy = joystick.y;
+
+        inputStrength = Math.min(
+            1,
+            Math.hypot(dx, dy)
+        );
+
+        if (inputStrength < .12) {
+            dx = 0;
+            dy = 0;
+            inputStrength = 0;
+        } else {
+            dx /= inputStrength;
+            dy /= inputStrength;
+        }
+    } else {
+        if (keys.left) dx--;
+        if (keys.right) dx++;
+        if (keys.up) dy--;
+        if (keys.down) dy++;
+
+        if (dx || dy) {
+            const length = Math.hypot(dx, dy);
+
+            dx /= length;
+            dy /= length;
+
+            inputStrength = 1;
+        }
+    }
 
     if (dx || dy) {
-        const length = Math.hypot(dx, dy);
-
-        dx /= length;
-        dy /= length;
-
         const targetSpeed =
-            player.speed * (player.boost > 0 ? 1.65 : 1);
+            player.speed *
+            inputStrength *
+            (player.boost > 0 ? 1.65 : 1);
 
         player.vx += (dx * targetSpeed - player.vx) * .18;
         player.vy += (dy * targetSpeed - player.vy) * .18;
